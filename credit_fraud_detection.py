@@ -7,7 +7,7 @@
 
 # ##### Import Pandas, Numpy, Matplotlib, and various Scitkit Learn libraries
 
-# In[213]:
+# In[316]:
 
 
 get_ipython().run_line_magic('matplotlib', 'inline')
@@ -27,18 +27,18 @@ from sklearn.model_selection import train_test_split, StratifiedShuffleSplit, St
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import RobustScaler
 import matplotlib.patches as mpatches
+from imblearn.under_sampling import NearMiss
+from sklearn.pipeline import make_pipeline
+from imblearn.pipeline import make_pipeline as imbalanced_make_pipeline
+from sklearn.model_selection import ShuffleSplit
+from sklearn.model_selection import learning_curve
 
 # Accuracy Measurements
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import precision_score
-from sklearn.metrics import precision_recall_curve
-from sklearn.metrics import roc_auc_score
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score, recall_score, precision_score, precision_recall_curve
+from sklearn.metrics import f1_score, roc_curve, roc_auc_score, confusion_matrix
 from sklearn import metrics as metrics
 from scipy.stats import skew, norm
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, cross_val_predict
 from sklearn.model_selection import GridSearchCV
 
 # Classifiers
@@ -55,7 +55,7 @@ from sklearn.decomposition import PCA, TruncatedSVD
 
 # ##### Load Dataset from csv file
 
-# In[183]:
+# In[263]:
 
 
 CREDIT_FRAUD_PATH = os.path.join("dataset", "creditcardfraud")
@@ -73,7 +73,7 @@ credit_fraud = load_credit_fraud_data()
 
 # ##### Visualize the Data
 
-# In[184]:
+# In[264]:
 
 
 #credit_fraud.hist(bins=50, figsize=(15,15))
@@ -100,7 +100,7 @@ plt.show()
 # 
 # ##### Before we decide which scaler to use, lets look at the boxplots to see the outlier situation.
 
-# In[185]:
+# In[265]:
 
 
 f, ax = plt.subplots(figsize=(20, 4))
@@ -111,7 +111,7 @@ plt.show()
 
 # ##### As we can see there are many outliers so it would be best to use RobustScaler.
 
-# In[186]:
+# In[266]:
 
 
 robust_scaler = RobustScaler()
@@ -129,7 +129,7 @@ credit_fraud.insert(1, 'scaled_time', scaled_time)
 
 # #### Split the data up using Stratified K-fold Cross Validation
 
-# In[187]:
+# In[267]:
 
 
 credit_X = credit_fraud.drop('Class', axis=1)
@@ -140,11 +140,16 @@ strat_k_split = StratifiedKFold(n_splits=5, random_state=None, shuffle=False)
 for train_index, test_index in strat_k_split.split(credit_X, credit_y):
     original_X_train, original_X_test = credit_X.iloc[train_index], credit_X.iloc[test_index]
     original_y_train, original_y_test = credit_y.iloc[train_index], credit_y.iloc[test_index]
+    
+original_Xtrain = original_X_train.values
+original_Xtest = original_X_test.values
+original_ytrain = original_y_train.values
+original_ytest = original_y_test.values
 
 
 # ##### Check the label distribution 
 
-# In[188]:
+# In[268]:
 
 
 train_unique_labels, train_counts_labels = np.unique(original_y_train, return_counts=True)
@@ -161,7 +166,7 @@ plt.title("Class Distributions")
 # ### Random Undersampling
 # ##### Removing data to produce a more balanced dataset
 
-# In[189]:
+# In[269]:
 
 
 # Shuffle the data
@@ -186,7 +191,7 @@ plt.title("Class Distributions")
 
 # #### Correlations
 
-# In[190]:
+# In[270]:
 
 
 fig, ax1 = plt.subplots(1, 1, figsize=(20, 10))
@@ -200,7 +205,7 @@ plt.show()
 
 # #### Use boxplots to display quartiles and outliers on highly correlated features
 
-# In[191]:
+# In[271]:
 
 
 correlated_features = ['V2', 'V4', 'V11', 'V19']
@@ -245,7 +250,7 @@ plt.show()
 
 # #### Visualize Distributions
 
-# In[192]:
+# In[272]:
 
 
 fig, axes = plt.subplots(1, 4, figsize=(20, 6))
@@ -271,7 +276,7 @@ plt.show()
 
 # #### Remove Outliers
 
-# In[194]:
+# In[273]:
 
 
 feature_names = ['V10', 'V12', 'V14', 'V16', 'V2', 'V4', 'V11', 'V19']
@@ -310,7 +315,7 @@ credit_bal = remove_outliers(credit_bal, features_with_outliers, feature_names)
 
 # #### View boxplots to check out outlier removal changes
 
-# In[195]:
+# In[274]:
 
 
 fig, axes = plt.subplots(1, 3, figsize=(20, 6))
@@ -330,7 +335,7 @@ plt.show()
 # ### Clustering Algorithms
 # ##### t-SNE, PCA, and Truncated SVD
 
-# In[201]:
+# In[275]:
 
 
 X = credit_bal.drop('Class', axis=1)
@@ -345,7 +350,7 @@ X_reduced_svd = TruncatedSVD(algorithm='randomized', random_state=42).fit_transf
 
 # #### Visualize Clusters
 
-# In[204]:
+# In[276]:
 
 
 f, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24,6))
@@ -387,12 +392,12 @@ plt.show()
 
 # ### Classification
 
-# In[212]:
+# In[298]:
 
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-classifiers = {
+classifier_pairs = {
     "LogisiticRegression": LogisticRegression(),
     "KNearest": KNeighborsClassifier(),
     "Support Vector Classifier": SVC(),
@@ -400,7 +405,7 @@ classifiers = {
     "RandomForestClassifier": RandomForestClassifier()
 }
 
-for type, classifier in classifiers.items():
+for type, classifier in classifier_pairs.items():
     classifier.fit(X_train, y_train)
     train_score = cross_val_score(classifier, X_train, y_train, cv=5)
     print("Classifier " + classifier.__class__.__name__, "has training score: ", round(train_score.mean(), 2) * 100)
@@ -409,7 +414,7 @@ for type, classifier in classifiers.items():
 # ### Use GridSearch to find the best parameters
 # ##### Create the grid search parameters for each classifier
 
-# In[224]:
+# In[299]:
 
 
 logistic_reg_params = [{"penalty": ['l1'], 'C': [0.001, 0.01, 0.1, 1, 10, 100, 1000], 
@@ -431,6 +436,185 @@ knears_params = {"n_neighbors": [1, 4, 7, 10, 13, 16, 19, 22], 'algorithm': ['au
 knears_grid = GridSearchCV(KNeighborsClassifier(), knears_params)
 knears_grid.fit(X_train, y_train)
 knears_neighbors = knears_grid.best_estimator_
+
+svc_params = {'C': [0.001, 0.01, 0.5, 0.7, 0.9, 1, 1.25, 1.5, 10, 100], 'kernel': ['rbf', 'poly', 'sigmoid', 'linear'],
+             'shrinking': [True, False], 'decision_function_shape': ['ovo', 'ovr']}
+svc_grid = GridSearchCV(SVC(), svc_params)
+svc_grid.fit(X_train, y_train)
+svc = svc_grid.best_estimator_
+
+tree_params = {'criterion': ["gini", "entropy"], 'splitter': ["best", "random"], 'min_samples_leaf': list(range(1, 11, 1)),
+              'class_weight': ["balanced", None], 'presort': [True, False]}
+tree_grid = GridSearchCV(DecisionTreeClassifier(), tree_params)
+tree_grid.fit(X_train, y_train)
+tree = tree_grid.best_estimator_
+
+# Add more estimators back in
+random_for_params = {'n_estimators': [5, 10], 'criterion': ["gini", "entropy"], 'min_samples_leaf': list(range(1, 11, 1)),
+                    'max_features': [None, "auto", "log2"], 'bootstrap': [False, True], 'class_weight': ["balanced", "balanced_subsample", None]}
+forest_grid = GridSearchCV(RandomForestClassifier(), random_for_params)
+forest_grid.fit(X_train, y_train)
+forest = forest_grid.best_estimator_
+
+
+# #### Undersampling during cross validation using Near Miss Technique
+
+# In[300]:
+
+
+undersample_X = credit_fraud.drop('Class', axis=1)
+undersample_y = credit_fraud['Class']
+
+for train_index, test_index in strat_k_split.split(undersample_X, undersample_y):
+    undersample_Xtrain, undersample_Xtest = undersample_X.iloc[train_index], undersample_X.iloc[test_index]
+    undersample_ytrain, undersample_ytest = undersample_y.iloc[train_index], undersample_y.iloc[test_index]
+
+undersample_Xtrain = undersample_Xtrain.values
+undersample_Xtest = undersample_Xtest.values
+undersample_ytrain = undersample_ytrain.values
+undersample_ytest = undersample_ytest.values     
+
+undersmp_acc = []
+undersmp_prec = []
+undersmp_rec = []
+undersmp_f1 = []
+undersmp_auc = []
+
+X_nearmiss, y_nearmiss = NearMiss().fit_sample(undersample_X.values, undersample_y.values)
+classifiers = [log_reg, knears_neighbors, svc, tree, forest]
+
+# Cross Validate
+for train, test in strat_k_split.split(undersample_Xtrain, undersample_ytrain):
+    undersample_pipeline = imbalanced_make_pipeline(NearMiss(sampling_strategy='majority'), classifiers[i])
+    undersample_model = undersample_pipeline.fit(undersample_Xtrain[train], undersample_ytrain[train])
+    undersample_pred = undersample_model.predict(undersample_Xtrain[test])
+
+    undersmp_acc.append(undersample_pipeline.score(original_Xtrain[test], original_ytrain[test]))
+    undersmp_prec.append(precision_score(original_ytrain[test], undersample_pred))
+    undersmp_rec.append(recall_score(original_ytrain[test], undersample_pred))
+    undersmp_f1.append(f1_score(original_ytrain[test], undersample_pred))
+    undersmp_auc.append(roc_auc_score(original_ytrain[test], undersample_pred))    
+        
+scores = [undersmp_acc, undersmp_prec, undersmp_rec, undersmp_f1, undersmp_auc]
+
+
+# #### Display Prediction Accuracy
+
+# In[301]:
+
+
+classifier_names = ["Logistic Regression", "K Nearest Neighbors", "SVC", "Decision Tree", "Random Forest"]
+measurement_names = ["Accuracy", "Precision", "Recall", "F1", "AUC"]
+def display_prediction_accuracy(scores, names, classifiers):
+    for i in range(len(scores)):
+        measurement = scores[i]
+        name = names[i]
+        sum_score = 0
+        for y in range(len(classifiers)):
+            classifier_name = classifiers[y]
+            print(classifier_name + " " + name + " Score: ", np.mean(measurement[y]))
+            sum_score += np.mean(measurement[y])
+        average_score = sum_score / len(classifiers) 
+        print("\n")
+        print("Average Score: ", average_score)
+        print("\n \n")
+            
+display_prediction_accuracy(scores, measurement_names, classifier_names)
+
+
+# ### Plot Learning Curves
+
+# In[308]:
+
+
+def plot_learning_curve(estimator1, name, X, y, ylim=None, cv=None, n_jobs=1, train_sizes=np.linspace(.1, 1.0, 5)):
+    f, ax1 = plt.subplots(1,1, figsize=(15,6), sharey=True)
+    if ylim is not None:
+        plt.ylim(*ylim)
+        
+    # First Estimator
+    train_sizes, train_scores, test_scores = learning_curve(
+        estimator1, X, y, cv=cv, n_jobs=n_jobs, train_sizes=train_sizes)
+    train_scores_mean = np.mean(train_scores, axis=1)
+    train_scores_std = np.std(train_scores, axis=1)
+    test_scores_mean = np.mean(test_scores, axis=1)
+    test_scores_std = np.std(test_scores, axis=1)
+    
+    ax1.fill_between(train_sizes, train_scores_mean - train_scores_std,
+                     train_scores_mean + train_scores_std, alpha=0.1,
+                     color="#ff9124")
+    ax1.fill_between(train_sizes, test_scores_mean - test_scores_std,
+                     test_scores_mean + test_scores_std, alpha=0.1, color="#2492ff")
+    ax1.plot(train_sizes, train_scores_mean, 'o-', color="#ff9124",
+             label="Training score")
+    ax1.plot(train_sizes, test_scores_mean, 'o-', color="#2492ff",
+             label="Cross-validation score")
+    
+    ax1.set_title(name + " Classifier Learning Curve", fontsize=14)
+    ax1.set_xlabel('Training size (m)')
+    ax1.set_ylabel('Score')
+    ax1.grid(True)
+    ax1.legend(loc="best")
+    
+    return plt
+
+cv = ShuffleSplit(n_splits=100, test_size=0.2, random_state=42)
+for i in range(len(classifiers)):
+    estimator = classifiers[i]
+    plot = plot_learning_curve(estimator, classifier_names[i], X_train, y_train, (0.87, 1.01), cv=cv, n_jobs=1)
+    plot.show()
+
+
+# ### Display ROC AUC Curves
+
+# In[314]:
+
+
+log_reg_pred = cross_val_predict(log_reg, X_train, y_train, cv=5, method="decision_function")
+
+knears_pred = cross_val_predict(knears_neighbors, X_train, y_train, cv=5)
+
+svc_pred = cross_val_predict(svc, X_train, y_train, cv=5, method="decision_function")
+
+tree_pred = cross_val_predict(tree, X_train, y_train, cv=5)
+
+forest_pred = cross_val_predict(forest, X_train, y_train, cv=5)
+
+classifier_predictions = [log_reg_pred, knears_pred, svc_pred, tree_pred, forest_pred]
+
+for i in range(len(classifiers)):
+    name = classifier_names[i]
+    print(name + ": ", roc_auc_score(y_train, classifier_predictions[i]))
+
+
+# In[338]:
+
+
+log_fpr, log_tpr, log_threshold = roc_curve(y_train, log_reg_pred)
+knear_fpr, knear_tpr, knear_threshold = roc_curve(y_train, knears_pred)
+svc_fpr, svc_tpr, svc_threshold = roc_curve(y_train, knears_pred)
+tree_fpr, tree_tpr, tree_threshold = roc_curve(y_train, tree_pred)
+forest_fpr, forest_tpr, forest_threshold = roc_curve(y_train, tree_pred)
+curves = [[log_fpr, log_tpr], [knear_fpr, knear_tpr], [svc_fpr, svc_tpr], [tree_fpr, tree_tpr], [forest_fpr, forest_tpr]]
+
+def graph_roc_curve_multiple(curves, names):
+    plt.figure(figsize=(16, 8))
+    plt.title("ROC Curve", fontsize=18)
+    for i in range(len(curves)):
+        classifier = curves[i]
+        fpr = classifier[0]
+        tpr = classifier[1]
+        auc = roc_auc_score(y_train, classifier_predictions[i])
+        plt.plot(fpr, tpr, label=names[i] + ": {:.4f}".format(auc))
+        plt.plot([0,1], [0,1], 'k--')
+        plt.axis([-0.01, 1, 0, 1])
+        plt.xlabel("False Positive Rate", fontsize=16)
+        plt.ylabel("True Positive Rate", fontsize=16)
+        plt.legend()
+
+plt.plot(knear_fpr, knear_tpr, label='KNears Neighbors Classifier Score: {:.4f}'.format(roc_auc_score(y_train, knears_pred)))
+plt.plot(tree_fpr, tree_tpr, label='Decision Tree Classifier Score: {:.4f}'.format(roc_auc_score(y_train, tree_pred)))
+graph_roc_curve_multiple(curves, classifier_names)
 
 
 # ##### Create a train and test set. These sets may contain null values because we haven't pre-processed them yet. 
