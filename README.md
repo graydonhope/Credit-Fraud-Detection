@@ -1,4 +1,4 @@
-# Credit Fraud Detection
+# Credit Card Transaction Fraud Detection
 ### Trained and compared 10 models to detect whether a credit card transaction is fraudulent or not. 
 #### Dataset contains 284,807 examples each with 31 features resulting in over 8,829,017 instances parsed.
 #### ** Note ** The dataset is too large to upload to github so it is left out of the repo. It can be found at: https://www.kaggle.com/mlg-ulb/creditcardfraud
